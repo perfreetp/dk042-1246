@@ -195,6 +195,13 @@ export default function Dashboard() {
   const handleTransferConfirm = () => {
     if (!selectedBedElder?.id || !transferToBedId || !transferReason.trim()) return;
     useStore.getState().transferBed(selectedBedElder.id, transferToBedId, transferReason);
+    const newBed = useStore.getState().beds.find((b) => b.id === transferToBedId);
+    if (newBed) {
+      const newRoom = rooms.find((r) => r.id === newBed.roomId);
+      if (newRoom && newRoom.floorId !== selectedFloorId) {
+        setSelectedFloorId(newRoom.floorId);
+      }
+    }
     setTransferModalOpen(false);
     setSelectedBedId(transferToBedId);
     setModalOpen(true);
@@ -483,8 +490,8 @@ export default function Dashboard() {
               </label>
               <Select
                 value={transferFloorId}
-                onChange={(value) => {
-                  setTransferFloorId(value as string);
+                onChange={(e) => {
+                  setTransferFloorId(e.target.value);
                   setTransferToBedId('');
                 }}
                 options={floors.map((f) => ({

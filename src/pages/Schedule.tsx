@@ -98,9 +98,7 @@ export default function Schedule() {
 
   const weekDates = useMemo(() => {
     const base = addDays(baseDate, weekOffset * 7);
-    const dates = getWeekDates(base);
-    dates.shift();
-    return dates;
+    return getWeekDates(base);
   }, [baseDate, weekOffset]);
 
   const weekDateStrs = useMemo(

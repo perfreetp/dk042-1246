@@ -37,7 +37,8 @@ export function getWeekDates(baseDate: Date = new Date()): Date[] {
   const dates: Date[] = []
   const current = new Date(baseDate)
   const day = current.getDay()
-  current.setDate(current.getDate() - day)
+  const mondayOffset = day === 0 ? -6 : 1 - day
+  current.setDate(current.getDate() + mondayOffset)
   for (let i = 0; i < 7; i++) {
     dates.push(new Date(current))
     current.setDate(current.getDate() + 1)

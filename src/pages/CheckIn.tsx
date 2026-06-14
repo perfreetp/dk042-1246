@@ -276,6 +276,12 @@ export default function CheckIn() {
         }));
         targetElderId = reservedElder.id;
       } else {
+        if (reservedElder) {
+          useStore.setState((state) => ({
+            elders: state.elders.filter((e) => e.id !== reservedElder.id),
+          }));
+        }
+
         const elderData: Elder = {
           id: '',
           name: step1Data.name,

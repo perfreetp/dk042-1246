@@ -206,6 +206,7 @@ export const useStore = create<Store>()(
           const toBed = state.beds.find((b) => b.id === toBedId);
           if (!fromBed || !toBed) return state;
 
+          const reservedElderId = toBed.elderId;
           const rateDifference = toBed.dailyRate - fromBed.dailyRate;
           const transferRecord: BedTransfer = {
             id: generateId(),
@@ -228,8 +229,17 @@ export const useStore = create<Store>()(
             return bed;
           });
 
+          let updatedElders = state.elders;
+          if (reservedElderId) {
+            const reservedElder = state.elders.find((e) => e.id === reservedElderId);
+            if (reservedElder && reservedElder.status === 'reserved') {
+              updatedElders = state.elders.filter((e) => e.id !== reservedElderId);
+            }
+          }
+
           return {
             beds: updatedBeds,
+            elders: updatedElders,
             bedTransfers: [...state.bedTransfers, transferRecord],
           };
         });
