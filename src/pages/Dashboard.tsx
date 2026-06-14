@@ -11,6 +11,7 @@ import {
   LogOut,
   ArrowRightLeft,
   ClipboardList,
+  CheckCircle2,
 } from 'lucide-react';
 import { useStore } from '@/store';
 import PageHeader from '@/components/layout/PageHeader';
@@ -21,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Alert } from '@/components/ui/Alert';
+import { Select } from '@/components/ui/Select';
 import { cn } from '@/lib/utils';
 import { formatCurrency } from '@/utils/formatUtils';
 import type { BedStatus, CareLevel, Room, Bed, Elder } from '@/types';
@@ -81,6 +83,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const initData = useStore((s) => s.initData);
   const floors = useStore((s) => s.floors);
+  const rooms = useStore((s) => s.rooms);
   const beds = useStore((s) => s.beds);
   const elders = useStore((s) => s.elders);
   const getOverdueTasks = useStore((s) => s.getOverdueTasks);
@@ -92,6 +95,10 @@ export default function Dashboard() {
   const [searchText, setSearchText] = useState('');
   const [selectedBedId, setSelectedBedId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferToBedId, setTransferToBedId] = useState('');
+  const [transferReason, setTransferReason] = useState('');
+  const [transferFloorId, setTransferFloorId] = useState('');
 
   useEffect(() => {
     initData();
@@ -100,8 +107,11 @@ export default function Dashboard() {
   useEffect(() => {
     if (floors.length > 0 && !selectedFloorId) {
       setSelectedFloorId(floors[0].id);
+      if (!transferFloorId) {
+        setTransferFloorId(floors[0].id);
+      }
     }
-  }, [floors, selectedFloorId]);
+  }, [floors, selectedFloorId, transferFloorId]);
 
   const overdue = useMemo(() => getOverdueTasks(), [getOverdueTasks]);
 
@@ -150,8 +160,43 @@ export default function Dashboard() {
     return getElderById(selectedBed.elderId) || null;
   }, [selectedBed, getElderById]);
 
+  const availableTransferBeds = useMemo(() => {
+    if (!transferFloorId) return [];
+    const floorRooms = rooms.filter((r) => r.floorId === transferFloorId);
+    const roomMap = new Map(floorRooms.map((r) => [r.id, r]));
+    return beds
+      .filter(
+        (b) =>
+          roomMap.has(b.roomId) &&
+          b.id !== selectedBedId &&
+          (b.status === 'empty' || b.status === 'reserved')
+      )
+      .map((b) => ({
+        bed: b,
+        room: roomMap.get(b.roomId) as Room,
+      }));
+  }, [beds, rooms, transferFloorId, selectedBedId]);
+
   const openBedModal = (bedId: string) => {
     setSelectedBedId(bedId);
+    setModalOpen(true);
+  };
+
+  const openTransferModal = () => {
+    if (floors.length > 0 && !transferFloorId) {
+      setTransferFloorId(floors[0].id);
+    }
+    setTransferToBedId('');
+    setTransferReason('');
+    setModalOpen(false);
+    setTransferModalOpen(true);
+  };
+
+  const handleTransferConfirm = () => {
+    if (!selectedBedElder?.id || !transferToBedId || !transferReason.trim()) return;
+    useStore.getState().transferBed(selectedBedElder.id, transferToBedId, transferReason);
+    setTransferModalOpen(false);
+    setSelectedBedId(transferToBedId);
     setModalOpen(true);
   };
 
@@ -296,7 +341,7 @@ export default function Dashboard() {
               <Button variant="outline" icon={<ClipboardList className="h-4 w-4" />}>
                 查看护理计划
               </Button>
-              <Button variant="secondary" icon={<ArrowRightLeft className="h-4 w-4" />}>
+              <Button variant="secondary" icon={<ArrowRightLeft className="h-4 w-4" />} onClick={openTransferModal}>
                 床位调换
               </Button>
               <Button variant="danger" icon={<LogOut className="h-4 w-4" />}>
@@ -400,6 +445,112 @@ export default function Dashboard() {
                 该床位暂无入住老人
               </div>
             )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={transferModalOpen}
+        onClose={() => setTransferModalOpen(false)}
+        title="床位调换"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setTransferModalOpen(false)}>
+              取消
+            </Button>
+            <Button
+              onClick={handleTransferConfirm}
+              disabled={!transferToBedId || !transferReason.trim()}
+              icon={<CheckCircle2 className="w-4 h-4" />}
+            >
+              确认调换
+            </Button>
+          </>
+        }
+      >
+        {selectedBedElder && selectedBed && (
+          <div className="space-y-5">
+            <div className="p-4 bg-gray-50 rounded-lg">
+              <div className="text-sm text-gray-500 mb-1">当前床位</div>
+              <div className="font-semibold text-gray-900">
+                {selectedBed.bedNumber} - {selectedBedElder.name}
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                目标楼层
+              </label>
+              <Select
+                value={transferFloorId}
+                onChange={(value) => {
+                  setTransferFloorId(value as string);
+                  setTransferToBedId('');
+                }}
+                options={floors.map((f) => ({
+                  label: f.name,
+                  value: f.id,
+                }))}
+                placeholder="请选择楼层"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                选择目标床位 <span className="text-rose-500">*</span>
+              </label>
+              {availableTransferBeds.length > 0 ? (
+                <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                  {availableTransferBeds.map(({ bed, room }) => {
+                    const isSelected = transferToBedId === bed.id;
+                    const statusText = bed.status === 'reserved' ? '已预订' : '空闲';
+                    const statusColor = bed.status === 'reserved' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700';
+                    return (
+                      <button
+                        key={bed.id}
+                        type="button"
+                        onClick={() => setTransferToBedId(bed.id)}
+                        className={cn(
+                          'p-3 rounded-lg border-2 text-left transition-all',
+                          isSelected
+                            ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-100'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                        )}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-medium text-gray-900">{bed.bedNumber}</span>
+                          <span className={cn('text-xs px-2 py-0.5 rounded-full', statusColor)}>
+                            {statusText}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500">{room.roomNumber} · {ROOM_TYPE_MAP[room.type]}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="p-4 text-center text-gray-500 bg-gray-50 rounded-lg">
+                  该楼层暂无可用床位
+                </div>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                调换原因 <span className="text-rose-500">*</span>
+              </label>
+              <textarea
+                value={transferReason}
+                onChange={(e) => setTransferReason(e.target.value)}
+                placeholder="请输入调换原因，例如：身体状况变化、房间调整等"
+                className={cn(
+                  'w-full rounded-lg border border-gray-300 px-3 py-2 text-sm',
+                  'focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500',
+                  'placeholder:text-gray-400'
+                )}
+                rows={3}
+              />
+            </div>
           </div>
         )}
       </Modal>

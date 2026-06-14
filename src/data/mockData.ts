@@ -154,6 +154,7 @@ export const carePlans: CarePlan[] = elders
       morningCare: true,
       eveningCare: level !== 'self-care',
       mealAssist: level === 'special-care' || level === 'full-care',
+      bathingAssist: level !== 'self-care',
       bathingSchedule: level === 'special-care' ? 'every2days' : level === 'full-care' ? 'every2days' : 'weekly',
       mealRounds: 3,
       nightRounds: level === 'special-care' ? 4 : level === 'full-care' ? 2 : 1,

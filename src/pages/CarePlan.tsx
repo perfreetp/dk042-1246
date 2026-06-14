@@ -143,6 +143,7 @@ export default function CarePlan() {
     morningCare: true,
     eveningCare: false,
     mealAssist: false,
+    bathingAssist: false,
     bathingSchedule: 'weekly',
     mealRounds: 3,
     nightRounds: 1,
@@ -187,6 +188,7 @@ export default function CarePlan() {
         morningCare: existingPlan.morningCare,
         eveningCare: existingPlan.eveningCare,
         mealAssist: existingPlan.mealAssist,
+        bathingAssist: existingPlan.bathingAssist ?? false,
         bathingSchedule: existingPlan.bathingSchedule,
         mealRounds: existingPlan.mealRounds,
         nightRounds: existingPlan.nightRounds,
@@ -207,6 +209,7 @@ export default function CarePlan() {
         morningCare: true,
         eveningCare: level !== 'self-care',
         mealAssist: level === 'special-care' || level === 'full-care',
+        bathingAssist: level !== 'self-care',
         bathingSchedule:
           level === 'special-care' || level === 'full-care' ? 'every2days' : 'weekly',
         mealRounds: 3,
@@ -225,9 +228,6 @@ export default function CarePlan() {
   };
 
   const toggleSwitch = (key: ToggleKey) => {
-    if (key === 'bathingAssist') {
-      return;
-    }
     setPlanForm((prev) => ({ ...prev, [key]: !(prev as any)[key] }));
   };
 

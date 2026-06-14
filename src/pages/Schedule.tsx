@@ -131,7 +131,9 @@ export default function Schedule() {
 
     if (next === 'rest') {
       if (existing) {
-        updateSchedule(existing.id, { shift: 'morning' });
+        useStore.setState((state) => ({
+          schedules: state.schedules.filter((s) => s.id !== existing.id),
+        }));
       }
     } else {
       if (existing) {
@@ -224,13 +226,18 @@ export default function Schedule() {
     const end = new Date(qsEndDate);
     const newSchedules: Schedule[] = [];
     const toUpdate: { id: string; shift: ShiftType }[] = [];
+    const toDelete: string[] = [];
 
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       const dateStr = formatDate(d, 'YYYY-MM-DD');
       const existing = schedules.find(
         (s) => s.caregiverId === qsCaregiverId && s.date === dateStr
       );
-      if (qsShift !== 'rest') {
+      if (qsShift === 'rest') {
+        if (existing) {
+          toDelete.push(existing.id);
+        }
+      } else {
         if (existing) {
           toUpdate.push({ id: existing.id, shift: qsShift });
         } else {
@@ -246,6 +253,11 @@ export default function Schedule() {
 
     if (newSchedules.length > 0) batchAddSchedule(newSchedules);
     toUpdate.forEach((u) => updateSchedule(u.id, { shift: u.shift }));
+    if (toDelete.length > 0) {
+      useStore.setState((state) => ({
+        schedules: state.schedules.filter((s) => !toDelete.includes(s.id)),
+      }));
+    }
 
     setQuickScheduleOpen(false);
     setQsCaregiverId('');

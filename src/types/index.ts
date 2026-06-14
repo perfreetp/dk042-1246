@@ -66,6 +66,7 @@ export interface CarePlan {
   morningCare: boolean;
   eveningCare: boolean;
   mealAssist: boolean;
+  bathingAssist: boolean;
   bathingSchedule: 'daily' | 'every2days' | 'weekly';
   mealRounds: number;
   nightRounds: number;

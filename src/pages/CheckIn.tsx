@@ -9,6 +9,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Search,
+  AlertCircle,
 } from 'lucide-react';
 import { useStore } from '@/store';
 import PageHeader from '@/components/layout/PageHeader';
@@ -16,6 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Modal } from '@/components/ui/Modal';
 import { cn } from '@/lib/utils';
 import { getAge, getTodayStr } from '@/utils/dateUtils';
 import { formatCurrency } from '@/utils/formatUtils';
@@ -107,8 +109,11 @@ export default function CheckIn() {
     floors,
     rooms,
     beds,
+    elders,
     addElder,
     addCarePlan,
+    updateElder,
+    getElderById,
   } = useStore();
 
   const [currentStep, setCurrentStep] = useState(1);
@@ -137,6 +142,11 @@ export default function CheckIn() {
 
   const [paymentMethod, setPaymentMethod] = useState('cash');
   const [receiptNo] = useState(() => `RCP${Date.now().toString().slice(-8)}`);
+
+  const [reservedConfirmOpen, setReservedConfirmOpen] = useState(false);
+  const [pendingReservedBedId, setPendingReservedBedId] = useState<string>('');
+  const [reservedElder, setReservedElder] = useState<Elder | null>(null);
+  const [useReservedElder, setUseReservedElder] = useState(false);
 
   useEffect(() => {
     if (floors.length > 0 && !selectedFloorId) {
@@ -238,27 +248,57 @@ export default function CheckIn() {
         .filter(Boolean)
         .join('、');
 
-      const elderData: Elder = {
-        id: '',
-        name: step1Data.name,
-        gender: step1Data.gender as 'male' | 'female',
-        idCard: step1Data.idCard,
-        birthDate: step1Data.birthDate,
-        age: calculatedAge,
-        phone: step1Data.phone,
-        emergencyContact: step1Data.emergencyContact,
-        emergencyPhone: step1Data.emergencyPhone,
-        careLevel: step2Data.careLevel as CareLevel,
-        checkInDate: getTodayStr(),
-        deposit: selectedCareLevel?.deposit || 0,
-        status: 'active',
-        medicalHistory: medicalHistoryCombined || undefined,
-        allergies: step1Data.allergies || undefined,
-      };
+      let targetElderId = '';
 
-      addElder(elderData, selectedBedId);
+      if (useReservedElder && reservedElder) {
+        updateElder(reservedElder.id, {
+          status: 'active',
+          name: step1Data.name,
+          gender: step1Data.gender as 'male' | 'female',
+          idCard: step1Data.idCard,
+          birthDate: step1Data.birthDate,
+          age: calculatedAge,
+          phone: step1Data.phone,
+          emergencyContact: step1Data.emergencyContact,
+          emergencyPhone: step1Data.emergencyPhone,
+          careLevel: step2Data.careLevel as CareLevel,
+          checkInDate: getTodayStr(),
+          deposit: selectedCareLevel?.deposit || 0,
+          medicalHistory: medicalHistoryCombined || undefined,
+          allergies: step1Data.allergies || undefined,
+        });
+        useStore.setState((state) => ({
+          beds: state.beds.map((bed) =>
+            bed.id === selectedBedId
+              ? { ...bed, status: 'occupied' as const }
+              : bed
+          ),
+        }));
+        targetElderId = reservedElder.id;
+      } else {
+        const elderData: Elder = {
+          id: '',
+          name: step1Data.name,
+          gender: step1Data.gender as 'male' | 'female',
+          idCard: step1Data.idCard,
+          birthDate: step1Data.birthDate,
+          age: calculatedAge,
+          phone: step1Data.phone,
+          emergencyContact: step1Data.emergencyContact,
+          emergencyPhone: step1Data.emergencyPhone,
+          careLevel: step2Data.careLevel as CareLevel,
+          checkInDate: getTodayStr(),
+          deposit: selectedCareLevel?.deposit || 0,
+          status: 'active',
+          medicalHistory: medicalHistoryCombined || undefined,
+          allergies: step1Data.allergies || undefined,
+        };
 
-      const newElderId = useStore.getState().elders[useStore.getState().elders.length - 1]?.id || '';
+        addElder(elderData, selectedBedId);
+
+        const newElder = useStore.getState().elders[useStore.getState().elders.length - 1];
+        targetElderId = newElder?.id || '';
+      }
 
       const defaultCustomTasks: CustomTask[] = [];
       if (step2Data.careLevel === 'special-care' || step2Data.careLevel === 'full-care') {
@@ -280,9 +320,10 @@ export default function CheckIn() {
         });
       }
 
-      const carePlan: CarePlan = {
-        id: '',
-        elderId: newElderId,
+      const existingPlan = useStore.getState().carePlans.find((p) => p.elderId === targetElderId);
+      const carePlanData: CarePlan = {
+        id: existingPlan?.id || '',
+        elderId: targetElderId,
         careLevel: step2Data.careLevel as CareLevel,
         turnOverHours:
           step2Data.careLevel === 'special-care'
@@ -299,6 +340,7 @@ export default function CheckIn() {
         morningCare: true,
         eveningCare: step2Data.careLevel !== 'self-care',
         mealAssist: step2Data.careLevel === 'special-care' || step2Data.careLevel === 'full-care',
+        bathingAssist: step2Data.careLevel !== 'self-care',
         bathingSchedule:
           step2Data.careLevel === 'special-care' || step2Data.careLevel === 'full-care'
             ? 'every2days'
@@ -313,12 +355,67 @@ export default function CheckIn() {
         customTasks: defaultCustomTasks,
       };
 
-      addCarePlan(carePlan);
+      if (existingPlan) {
+        useStore.getState().updateCarePlan(existingPlan.id, carePlanData);
+      } else {
+        addCarePlan(carePlanData);
+      }
 
       navigate('/');
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleBedSelect = (bedId: string) => {
+    const bed = beds.find((b) => b.id === bedId);
+    if (bed?.status === 'reserved' && bed.elderId) {
+      const elder = getElderById(bed.elderId);
+      if (elder) {
+        setPendingReservedBedId(bedId);
+        setReservedElder(elder);
+        setUseReservedElder(false);
+        setReservedConfirmOpen(true);
+        return;
+      }
+    }
+    setSelectedBedId(bedId);
+    setUseReservedElder(false);
+    setReservedElder(null);
+  };
+
+  const confirmReservedChoice = () => {
+    setSelectedBedId(pendingReservedBedId);
+    if (useReservedElder && reservedElder) {
+      setStep1Data({
+        name: reservedElder.name,
+        gender: reservedElder.gender,
+        idCard: reservedElder.idCard,
+        birthDate: reservedElder.birthDate,
+        phone: reservedElder.phone,
+        emergencyContact: reservedElder.emergencyContact,
+        emergencyPhone: reservedElder.emergencyPhone,
+        medicalHistory: reservedElder.medicalHistory || '',
+        allergies: reservedElder.allergies || '',
+      });
+      setStep2Data({
+        careLevel: reservedElder.careLevel,
+        healthConditions: [],
+      });
+    } else {
+      setStep1Data({
+        name: '',
+        gender: '',
+        idCard: '',
+        birthDate: '',
+        phone: '',
+        emergencyContact: '',
+        emergencyPhone: '',
+        medicalHistory: '',
+        allergies: '',
+      });
+    }
+    setReservedConfirmOpen(false);
   };
 
   const toggleHealthCondition = (value: string) => {
@@ -629,7 +726,7 @@ export default function CheckIn() {
                 <button
                   key={bed.id}
                   type="button"
-                  onClick={() => setSelectedBedId(bed.id)}
+                  onClick={() => handleBedSelect(bed.id)}
                   className={cn(
                     'p-4 rounded-xl border-2 bg-white text-left transition-all',
                     isSelected
@@ -807,6 +904,107 @@ export default function CheckIn() {
           </div>
         </CardContent>
       </Card>
+
+      <Modal
+        open={reservedConfirmOpen}
+        onClose={() => setReservedConfirmOpen(false)}
+        title="该床位已被预订"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setReservedConfirmOpen(false)}>
+              取消
+            </Button>
+            <Button onClick={confirmReservedChoice}>
+              确认选择
+            </Button>
+          </>
+        }
+      >
+        {reservedElder && (
+          <div className="space-y-5">
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-medium text-amber-800 mb-1">床位已被预订</div>
+                <div className="text-sm text-amber-700">
+                  该床位已被 <span className="font-semibold">{reservedElder.name}</span> 老人预订。请选择入住方式：
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className={cn(
+                'block p-4 rounded-xl border-2 cursor-pointer transition-all',
+                useReservedElder
+                  ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-100'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              )}>
+                <input
+                  type="radio"
+                  name="reservedChoice"
+                  checked={useReservedElder}
+                  onChange={() => setUseReservedElder(true)}
+                  className="sr-only"
+                />
+                <div className="flex items-start gap-3">
+                  <div className={cn(
+                    'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5',
+                    useReservedElder ? 'border-primary-500' : 'border-gray-300'
+                  )}>
+                    {useReservedElder && <div className="w-3 h-3 rounded-full bg-primary-500" />}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900">预订老人 {reservedElder.name} 转正入住</div>
+                    <div className="text-sm text-gray-500 mt-1">
+                      使用预订老人的信息办理正式入住，系统将自动填充其资料。
+                    </div>
+                    <div className="mt-3 p-3 bg-gray-50 rounded-lg text-sm">
+                      <div className="grid grid-cols-2 gap-2 text-gray-600">
+                        <div>性别：{reservedElder.gender === 'male' ? '男' : '女'}</div>
+                        <div>年龄：{reservedElder.age} 岁</div>
+                        <div>联系电话：{reservedElder.phone}</div>
+                        <div>护理等级：{careLevelOptions.find(c => c.value === reservedElder.careLevel)?.label}</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </label>
+
+              <label className={cn(
+                'block p-4 rounded-xl border-2 cursor-pointer transition-all',
+                !useReservedElder
+                  ? 'border-primary-500 bg-primary-50 ring-2 ring-primary-100'
+                  : 'border-gray-200 bg-white hover:border-gray-300'
+              )}>
+                <input
+                  type="radio"
+                  name="reservedChoice"
+                  checked={!useReservedElder}
+                  onChange={() => setUseReservedElder(false)}
+                  className="sr-only"
+                />
+                <div className="flex items-start gap-3">
+                  <div className={cn(
+                    'w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5',
+                    !useReservedElder ? 'border-primary-500' : 'border-gray-300'
+                  )}>
+                    {!useReservedElder && <div className="w-3 h-3 rounded-full bg-primary-500" />}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-gray-900">新老人入住（取消原预订）</div>
+                    <div className="text-sm text-gray-500 mt-1">
+                      取消 {reservedElder.name} 的预订，为新老人办理入住。原预订老人将变为无床位状态。
+                    </div>
+                    <div className="mt-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700">
+                      注意：此操作将取消 {reservedElder.name} 的预订，请先与家属确认。
+                    </div>
+                  </div>
+                </div>
+              </label>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
